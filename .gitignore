@@ -216,3 +216,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+dataset/
+generated_queries/
+results/
+shiftHandler/

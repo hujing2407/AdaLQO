@@ -221,3 +221,4 @@ dataset/
 generated_queries/
 results/
 shiftHandler/
+logs/

@@ -9,7 +9,7 @@ from sklearn import preprocessing
 from sklearn.pipeline import Pipeline
 
 from torch.utils.data import DataLoader
-import net
+from . import net
 from featurize import TreeFeaturizer
 
 CUDA = torch.cuda.is_available()

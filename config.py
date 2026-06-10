@@ -11,6 +11,7 @@ class Config:
     # 2. 子目录定义
     DATASET_DIR = ROOT / "dataset"
     LOG_DIR = ROOT / "logs"
+    RES_DIR = ROOT / "results"
 
     # 默认数据库配置（作为 Fallback）
     DEFAULT_DB_PARAMS = {
@@ -57,12 +58,18 @@ class Config:
         return logging.getLogger("DB")
 
     @staticmethod
-    def get_save_path(db_name):
+    def get_data_path(db_name):
         """生成并自动创建统计数据存放路径"""
         path = Config.DATASET_DIR / db_name
         path.mkdir(parents=True, exist_ok=True)
         return path
 
+    @staticmethod
+    def get_result_path(db_name):
+        """生成并自动创建统计数据存放路径"""
+        path = Config.RES_DIR / db_name
+        path.mkdir(parents=True, exist_ok=True)
+        return path
 
 # 预创建基础文件夹
 Config.DATASET_DIR.mkdir(exist_ok=True)

@@ -1,4 +1,7 @@
 import argparse
+from typing import Any
+
+from bao_server.model import BaoRegression
 from config import Config
 
 import numpy as np
@@ -15,16 +18,15 @@ import bao_server.model as model
 logger = Config.setup_logging()
 
 def main():
-    # parser = argparse.ArgumentParser()
-    # parser.add_argument('--imbalance', default=False, help="is imbalance?", action='store_true')
-    # parser.add_argument("--buffersize", help="buffer size", type=int, default=50)
-    # parser.add_argument("--epochs", help="number of epochs (default: 20)", type=int, default=30)
-    # parser.add_argument("--batch", help="batch size (default: 1024)", type=int, default=1024)
-    # args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--dataset', default='tpc-h-shifting', help="dataset folder name")
+    parser.add_argument("--size", help="size of the slide window", type=int, default=20)
+    parser.add_argument("--batch", help="batch size (default: 10)", type=int, default=10)
+    args = parser.parse_args()
 
     # 1. Load DataSet
     # 1.1 load all datasets - queries, plans, latecies
-    df = load_data("tpc-h-shifting")
+    df = load_data(args.dataset)
     p0_df = df[df["phase"] == "phase_0"]
     p1_df = df[df["phase"] == "phase_1"]
     p2_df = df[df["phase"] == "phase_2"]
@@ -39,21 +41,7 @@ def main():
             X.append(plan)
             y.append(latency)
 
-    # TODO:// have_cache_data=False, since Buffer Feature missed. Fix it later
-    reg = model.BaoRegression(have_cache_data=False, verbose=False)
-
-    try:
-        reg.fit_feature_extractor(X, y)
-    except Exception as e:
-        logger.error("ERROR:", e)
-
-    logger.info("Bao model training......")
-    reg.fit_model(X, y, seed=42, ada_size=False)
-    torch.save(
-        reg._BaoRegression__net.state_dict(),
-        "results/model/bao_model.pt"
-    )
-    logger.info("Bao model trained & saved!")
+    reg = train_model(X, y)
 
     # 3. Prediction and Evaluation
     pred1 = prediction(reg,p1_df,f"results/p1_pred.csv")
@@ -90,6 +78,25 @@ def main():
 
     scatter_plot("Phase2", pred2, mmd_score_p2, "results/mmd_vs_regret_p2.png")
     logger.info("Phase2: mmd vs regret plot saved!")
+
+
+def train_model(X: list[Any], y: list[Any]) -> BaoRegression:
+    # TODO:// have_cache_data=False, since Buffer Feature missed. Fix it later
+    reg = model.BaoRegression(have_cache_data=False, verbose=False)
+
+    try:
+        reg.fit_feature_extractor(X, y)
+    except Exception as e:
+        logger.error("ERROR:", e)
+
+    logger.info("Bao model training......")
+    reg.fit_model(X, y, seed=42, ada_size=False)
+    torch.save(
+        reg._BaoRegression__net.state_dict(),
+        "results/model/bao_model.pt"
+    )
+    logger.info("Bao model trained & saved!")
+    return reg
 
 
 if __name__ == "__main__":

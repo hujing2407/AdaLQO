@@ -4,20 +4,22 @@ from scipy.stats import ks_2samp
 from scipy.stats import wasserstein_distance
 from torch.autograd import Variable
 
+
 def guassian_kernel(source, target, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
-    n_samples = int(source.size()[0])+int(target.size()[0])
+    n_samples = int(source.size()[0]) + int(target.size()[0])
     total = torch.cat([source, target], dim=0)
     total0 = total.unsqueeze(0).expand(int(total.size(0)), int(total.size(0)), int(total.size(1)))
     total1 = total.unsqueeze(1).expand(int(total.size(0)), int(total.size(0)), int(total.size(1)))
-    L2_distance = ((total0-total1)**2).sum(2)
+    L2_distance = ((total0 - total1) ** 2).sum(2)
     if fix_sigma:
         bandwidth = fix_sigma
     else:
-        bandwidth = torch.sum(L2_distance.data) / (n_samples**2-n_samples)
+        bandwidth = torch.sum(L2_distance.data) / (n_samples ** 2 - n_samples)
     bandwidth /= kernel_mul ** (kernel_num // 2)
-    bandwidth_list = [bandwidth * (kernel_mul**i) for i in range(kernel_num)]
+    bandwidth_list = [bandwidth * (kernel_mul ** i) for i in range(kernel_num)]
     kernel_val = [torch.exp(-L2_distance / bandwidth_temp) for bandwidth_temp in bandwidth_list]
-    return sum(kernel_val)#/len(kernel_val)
+    return sum(kernel_val)  # /len(kernel_val)
+
 
 def mmd(source, target, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
     n = int(source.size()[0])
@@ -30,22 +32,23 @@ def mmd(source, target, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
     XY = kernels[:n, n:]
     YX = kernels[n:, :n]
 
-    XX = torch.div(XX, n * n).sum(dim=1).view(1,-1)  # K_ss矩阵，Source<->Source
-    XY = torch.div(XY, -n * m).sum(dim=1).view(1,-1) # K_st矩阵，Source<->Target
+    XX = torch.div(XX, n * n).sum(dim=1).view(1, -1)  # K_ss矩阵，Source<->Source
+    XY = torch.div(XY, -n * m).sum(dim=1).view(1, -1)  # K_st矩阵，Source<->Target
 
-    YX = torch.div(YX, -m * n).sum(dim=1).view(1,-1) # K_ts矩阵,Target<->Source
-    YY = torch.div(YY, m * m).sum(dim=1).view(1,-1)  # K_tt矩阵,Target<->Target
+    YX = torch.div(YX, -m * n).sum(dim=1).view(1, -1)  # K_ts矩阵,Target<->Source
+    YY = torch.div(YY, m * m).sum(dim=1).view(1, -1)  # K_tt矩阵,Target<->Target
 
     loss = (XX + XY).sum() + (YX + YY).sum()
     return loss
 
-def ws(model, embedding_1, embedding_2):
 
+def ws(model, embedding_1, embedding_2):
     pca = PCA(n_components=1)
     emb1_1d = pca.transform(embedding_1)
     emb2_1d = pca.transform(embedding_2)
 
     return wasserstein_distance(emb1_1d, emb2_1d)
+
 
 def ks_values_min(embedding_1, embedding_2):
     p_values = []
@@ -55,23 +58,25 @@ def ks_values_min(embedding_1, embedding_2):
 
     return (min(p_values))
 
+
 def ks_values_pca(embedding_1, embedding_2):
     pca = PCA(n_components=1)
     emb1_1d = pca.transform(embedding_1)
     emb2_1d = pca.transform(embedding_2)
     return ks_2samp(emb1_1d[:, 0], emb2_1d[:, 0])
 
+
 def main():
     # 样本数量可以不同，特征数目必须相同
     # 100和90是样本数量，50是特征数目
-    data_1 = torch.tensor(np.random.normal(loc=0,scale=10,size=(100,50)))
-    data_2 = torch.tensor(np.random.normal(loc=10,scale=10,size=(90,50)))
-    print("MMD Loss:",mmd(data_1,data_2))
+    data_1 = torch.tensor(np.random.normal(loc=0, scale=10, size=(100, 50)))
+    data_2 = torch.tensor(np.random.normal(loc=10, scale=10, size=(90, 50)))
+    print("MMD Loss:", mmd(data_1, data_2))
 
-    data_1 = torch.tensor(np.random.normal(loc=0,scale=10,size=(100,50)))
-    data_2 = torch.tensor(np.random.normal(loc=0,scale=9,size=(80,50)))
+    data_1 = torch.tensor(np.random.normal(loc=0, scale=10, size=(100, 50)))
+    data_2 = torch.tensor(np.random.normal(loc=0, scale=9, size=(80, 50)))
 
-    print("MMD Loss:",mmd(data_1,data_2))
+    print("MMD Loss:", mmd(data_1, data_2))
 
 
 if __name__ == "__main__":

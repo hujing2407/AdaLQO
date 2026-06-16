@@ -5,6 +5,7 @@ import ast
 import matplotlib.pyplot as plt
 from pandas import DataFrame, Series
 
+
 def load_data(dataset_name):
     df = pd.read_csv(f"dataset/{dataset_name}/execution_results.csv")
     df["latency_list"] = df["latency_list"].apply(ast.literal_eval)
@@ -26,7 +27,8 @@ def wrap_plan(plan):
         return plan
     return {"Plan": plan}
 
-def split_by_batch_size(df, batch_size = 100):
+
+def split_by_batch_size(df, batch_size=100):
     batches = []
 
     for start in range(0, len(df), batch_size):
@@ -35,14 +37,16 @@ def split_by_batch_size(df, batch_size = 100):
 
     return batches
 
+
 def split_dataset(df: DataFrame, batch_size: int):
     phase_batches = []
     df_shuffled = df.sample(frac=1, random_state=42).reset_index(drop=True)
     # df_shuffled = df
     for phase_id, phase_df in df_shuffled.groupby("phase"):
-        phase_batches.append(split_by_batch_size(phase_df,batch_size))
+        phase_batches.append(split_by_batch_size(phase_df, batch_size))
 
     return phase_batches
+
 
 def get_training_data(df: DataFrame):
     X = []
@@ -54,6 +58,7 @@ def get_training_data(df: DataFrame):
             X.append(plan)
             y.append(latency)
     return X, y
+
 
 def prediction(model, data):
     results = []
@@ -123,7 +128,7 @@ def plot_res(phase_name, pre_results, save_path):
     plt.show()
 
 
-def scatter_plot(phase_name, pre_results, mmd_score_p1,save_path):
+def scatter_plot(phase_name, pre_results, mmd_score_p1, save_path):
     regrets = pre_results["regret"]
     x_np = [t.item() for t in mmd_score_p1]
     y_np = list(regrets)

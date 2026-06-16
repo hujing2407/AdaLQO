@@ -1,4 +1,7 @@
 import torch
+from sklearn.decomposition import PCA
+from scipy.stats import ks_2samp
+from scipy.stats import wasserstein_distance
 from torch.autograd import Variable
 
 def guassian_kernel(source, target, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
@@ -36,7 +39,27 @@ def mmd(source, target, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
     loss = (XX + XY).sum() + (YX + YY).sum()
     return loss
 
+def ws(model, embedding_1, embedding_2):
 
+    pca = PCA(n_components=1)
+    emb1_1d = pca.transform(embedding_1)
+    emb2_1d = pca.transform(embedding_2)
+
+    return wasserstein_distance(emb1_1d, emb2_1d)
+
+def ks_values_min(embedding_1, embedding_2):
+    p_values = []
+    for d in range(64):
+        stat, p = ks_2samp(embedding_1[:, d], embedding_2[:, d])
+        p_values.append(p)
+
+    return (min(p_values))
+
+def ks_values_pca(embedding_1, embedding_2):
+    pca = PCA(n_components=1)
+    emb1_1d = pca.transform(embedding_1)
+    emb2_1d = pca.transform(embedding_2)
+    return ks_2samp(emb1_1d[:, 0], emb2_1d[:, 0])
 
 def main():
     # 样本数量可以不同，特征数目必须相同

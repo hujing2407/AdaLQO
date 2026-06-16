@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import ast
 import matplotlib.pyplot as plt
-
+from pandas import DataFrame, Series
 
 def load_data(dataset_name):
     df = pd.read_csv(f"dataset/{dataset_name}/execution_results.csv")
@@ -26,8 +26,36 @@ def wrap_plan(plan):
         return plan
     return {"Plan": plan}
 
+def split_by_batch_size(df, batch_size = 100):
+    batches = []
 
-def prediction(model, data, save_path):
+    for start in range(0, len(df), batch_size):
+        end = start + batch_size
+        batches.append(df.iloc[start:end])
+
+    return batches
+
+def split_dataset(df: DataFrame, batch_size: int):
+    phase_batches = []
+    df_shuffled = df.sample(frac=1, random_state=42).reset_index(drop=True)
+    # df_shuffled = df
+    for phase_id, phase_df in df_shuffled.groupby("phase"):
+        phase_batches.append(split_by_batch_size(phase_df,batch_size))
+
+    return phase_batches
+
+def get_training_data(df: DataFrame):
+    X = []
+    y = []
+    for _, row in df.iterrows():
+        plans = row["plans"]
+        latencies = row["latency_list"]
+        for plan, latency in zip(plans, latencies):
+            X.append(plan)
+            y.append(latency)
+    return X, y
+
+def prediction(model, data):
     results = []
     for _, row in data.iterrows():
         plans = row["plans"]
@@ -50,7 +78,7 @@ def prediction(model, data, save_path):
 
         results.append(result)
     res = pd.DataFrame(results)
-    res.to_csv(save_path, index=False)
+    # res.to_csv(save_path, index=False)
     return res
 
 
@@ -58,11 +86,13 @@ def plot_res(phase_name, pre_results, save_path):
     import matplotlib.pyplot as plt
 
     default_latency_list = pre_results["default_latency"]
+    base_bao_latency_list = pre_results["base_bao_latency"]
     bao_latency_list = pre_results["bao_latency"]
     optimal_latency_list = pre_results["best_latency"]
 
     # 累积Latency
     default_cum = np.cumsum(default_latency_list)
+    base_bao_cum = np.cumsum(base_bao_latency_list)
     bao_cum = np.cumsum(bao_latency_list)
     optimal_cum = np.cumsum(optimal_latency_list)
 
@@ -72,6 +102,9 @@ def plot_res(phase_name, pre_results, save_path):
     plt.plot(x, default_cum,
              linewidth=2,
              label="PostgreSQL Default")
+    plt.plot(x, base_bao_cum,
+             linewidth=2,
+             label="Base Bao")
     plt.plot(x, bao_cum,
              linewidth=2,
              label="Bao")

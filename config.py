@@ -23,7 +23,7 @@ class Config:
         "options": "-c statement_timeout=600000"
     }
 
-    QUERY_DIR = "generated_queries"  # SQL文件路径
+    QUERY_DIR = "dataset/queries/tpc-h_sf1_10"  # SQL文件路径
     EXPLAIN_OR_NOT = False  # 是否开启解释器
     SAVE_MODEL = True  # 是否保存模型
 

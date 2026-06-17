@@ -1,4 +1,5 @@
 import torch
+import numpy as np
 from sklearn.decomposition import PCA
 from scipy.stats import ks_2samp
 from scipy.stats import wasserstein_distance
@@ -42,13 +43,28 @@ def mmd(source, target, kernel_mul=2.0, kernel_num=5, fix_sigma=None):
     return loss
 
 
-def ws(model, embedding_1, embedding_2):
+def ws(embedding_1, embedding_2):
     pca = PCA(n_components=1)
+    # Fit on reference data
+    pca.fit(embedding_1)
     emb1_1d = pca.transform(embedding_1)
     emb2_1d = pca.transform(embedding_2)
 
-    return wasserstein_distance(emb1_1d, emb2_1d)
+    return wasserstein_distance(emb1_1d[:,0], emb2_1d[:,0])
 
+def wasserstein_random_proj(X, Y, n_proj=10):
+    dims = X.shape[1]
+    results = []
+    for _ in range(n_proj):
+        w = np.random.normal(size=dims)
+        w = w / np.linalg.norm(w)
+        x_proj = X @ w
+        y_proj = Y @ w
+
+        d = wasserstein_distance(x_proj, y_proj)
+        results.append(d)
+
+    return np.mean(results)
 
 def ks_values_min(embedding_1, embedding_2):
     p_values = []
@@ -61,6 +77,8 @@ def ks_values_min(embedding_1, embedding_2):
 
 def ks_values_pca(embedding_1, embedding_2):
     pca = PCA(n_components=1)
+    # Fit on reference data
+    pca.fit(embedding_1)
     emb1_1d = pca.transform(embedding_1)
     emb2_1d = pca.transform(embedding_2)
     return ks_2samp(emb1_1d[:, 0], emb2_1d[:, 0])

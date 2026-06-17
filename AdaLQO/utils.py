@@ -109,10 +109,10 @@ def plot_res(phase_name, pre_results, save_path):
              label="PostgreSQL Default")
     plt.plot(x, base_bao_cum,
              linewidth=2,
-             label="Base Bao")
+             label="Bao w/o shifting detector")
     plt.plot(x, bao_cum,
              linewidth=2,
-             label="Bao")
+             label="Bao with shifting detector")
     plt.plot(x, optimal_cum,
              linewidth=2,
              label="Optimal")

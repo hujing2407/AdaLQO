@@ -25,8 +25,8 @@ HINTS_OFF  = ['',
 # =========================================================
 db_params = Config.get_db_params()
 dbname = db_params["dbname"]
-QUERY_DIR = "generated_queries"
-RESULT_DIR = "dataset/tpc-h-shifting"
+QUERY_DIR = "AdaLQO/dataset/queries/tpc-h"
+RESULT_DIR = "dataset/tpc-h"
 os.makedirs(RESULT_DIR, exist_ok=True)
 
 metadata_path = os.path.join(
@@ -53,7 +53,7 @@ cursor = conn.cursor()
 
 def run_query(cur,sql):
     explain_sql = f"""
-    EXPLAIN (ANALYZE, FORMAT JSON)
+    EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)
     {sql}
     """
     start = time.time()
@@ -62,9 +62,12 @@ def run_query(cur,sql):
     result = cursor.fetchone()[0][0]
     execution_time = result["Execution Time"]
     plan = result["Plan"]
+    buffer_hit = result.get("Shared Hit Blocks")
+    buffer_read = result.get("Shared Read Blocks")
+
     # actual_rows = plan.get("Actual Rows", None)
     # estimated_rows = plan.get("Plan Rows", None)
-    return plan, execution_time
+    return plan, execution_time, buffer_hit, buffer_read
 
 # =========================================================
 # EXECUTE ALL QUERIES
@@ -76,20 +79,26 @@ for idx, item in enumerate(metadata):
     try:
         plan_list = []
         latency_list = []
+        buffer_hit_list = []
+        buffer_read_list = []
         for i, hint_sql in enumerate(HINTS_OFF):
             reset_pg_settings(cursor)
             if hint_sql.strip():
                 cursor.execute(hint_sql)
             try:
                 logger.info(f"Executing query: {item['query_id']} with {i}th plan in {item['phase']}.")
-                plan_json, latency = run_query(cursor, sql)
+                plan_json, latency, buffer_hit, buffer_read = run_query(cursor, sql)
                 plan_list.append(plan_json)
                 latency_list.append(latency)
+                buffer_hit_list.append(buffer_hit)
+                buffer_read_list.append(buffer_read)
             except Exception as e:
                 logger.error(f"Query failed: {sql} with {i}th plan.")
                 logger.error(e)
                 plan_list.append(None)
                 latency_list.append(float("inf"))
+                buffer_hit_list.append(None)
+                buffer_read_list.append(None)
 
         best_execute_time = min(latency_list)
         phase_dir = os.path.join(
@@ -114,6 +123,8 @@ for idx, item in enumerate(metadata):
             "query_template": item["query_template"],
             "query_id": item["query_id"],
             "latency_list": latency_list,
+            "buffer_hit_list": buffer_hit_list,
+            "buffer_read_list": buffer_read_list,
             "plan_path": plan_path
         })
 

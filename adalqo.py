@@ -23,7 +23,7 @@ PHASE_NUM = 3
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', help="dataset folder name", default='tpc-h-shifting')
+    parser.add_argument('--dataset', help="dataset folder name", default='tpc-h_sf1_100-shifting')
     parser.add_argument("--size", help="size of the slide window", type=int, default=20)
     parser.add_argument("--batch", help="batch size (default: 10)", type=int, default=10)
     args = parser.parse_args()

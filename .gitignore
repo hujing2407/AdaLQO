@@ -218,7 +218,7 @@ __marimo__/
 .streamlit/secrets.toml
 
 dataset/
-generated_queries/
+dataset/queries/tpc-h_sf1_10/
 results/
 shiftHandler/
 logs/

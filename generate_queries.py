@@ -6,8 +6,8 @@ from datetime import datetime, timedelta
 # =========================================================
 # CONFIG
 # =========================================================
-OUTPUT_DIR = "generated_queries"
-NUM_INSTANCES_PER_QUERY = 10
+OUTPUT_DIR = "dataset/queries/tpc-h_sf1_100"
+NUM_INSTANCES_PER_QUERY = 100
 random.seed(42)
 
 # =========================================================

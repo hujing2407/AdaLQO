@@ -38,9 +38,9 @@ def split_by_batch_size(df, batch_size=100):
     return batches
 
 
-def split_dataset(df: DataFrame, batch_size: int):
+def split_dataset(df: DataFrame, batch_size: int, random_state:int):
     phase_batches = []
-    df_shuffled = df.sample(frac=1, random_state=42).reset_index(drop=True)
+    df_shuffled = df.sample(frac=1, random_state=random_state).reset_index(drop=True)
     # df_shuffled = df
     for phase_id, phase_df in df_shuffled.groupby("phase"):
         phase_batches.append(split_by_batch_size(phase_df, batch_size))

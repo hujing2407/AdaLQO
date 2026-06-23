@@ -7,19 +7,7 @@ from config import Config
 import pandas as pd
 
 logger = Config.setup_logging()
-HINTS_OFF  = ['',
-             'set enable_nestloop = off;',
-             'set enable_nestloop = off; set enable_indexscan = off;',
-             'set enable_hashjoin = off;',
-             'set enable_hashjoin = off; set enable_indexscan = off;',
-             'set enable_mergejoin = off;',
-             'set enable_mergejoin = off; set enable_indexscan = off;',
-             'set enable_nestloop = off; set enable_mergejoin = off;',
-             'set enable_nestloop = off; set enable_mergejoin = off; set enable_indexscan = off;',
-             'set enable_nestloop = off; set enable_hashjoin = off;',
-             'set enable_nestloop = off; set enable_hashjoin = off; set enable_indexscan = off;',
-             'set enable_mergejoin = off; set enable_hashjoin = off;',
-             'set enable_mergejoin = off; set enable_hashjoin = off; set enable_indexscan = off;']
+HINTS_OFF  = Config.HINTS_OFF
 # =========================================================
 # SETUP DB CONNECTION & LOAD METADATA
 # =========================================================

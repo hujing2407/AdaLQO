@@ -23,6 +23,30 @@ class Config:
         "options": "-c statement_timeout=600000"
     }
 
+    HINTS_OFF = [
+        '',
+        'set enable_nestloop = off;',
+        'set enable_nestloop = off; set enable_indexscan = off;',
+        'set enable_hashjoin = off;',
+        'set enable_hashjoin = off; set enable_indexscan = off;',
+        'set enable_mergejoin = off;',
+        'set enable_mergejoin = off; set enable_indexscan = off;',
+        'set enable_nestloop = off; set enable_mergejoin = off;',
+        'set enable_nestloop = off; set enable_mergejoin = off; set enable_indexscan = off;',
+        'set enable_nestloop = off; set enable_hashjoin = off;',
+        'set enable_nestloop = off; set enable_hashjoin = off; set enable_indexscan = off;',
+        'set enable_mergejoin = off; set enable_hashjoin = off;',
+        'set enable_mergejoin = off; set enable_hashjoin = off; set enable_indexscan = off;'
+    ]
+
+    DB_CONFIG = {
+        "host": "localhost",
+        "port": 5432,
+        "dbname": "tpcds",
+        "user": "postgres",
+        "password": "123",
+    }
+
     QUERY_DIR = "dataset/queries/tpc-h_sf1_10"  # SQL文件路径
     EXPLAIN_OR_NOT = False  # 是否开启解释器
     SAVE_MODEL = True  # 是否保存模型

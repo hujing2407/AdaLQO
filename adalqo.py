@@ -23,7 +23,7 @@ PHASE_NUM = 3
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', help="dataset folder name", default='tpc-h-shifting')
+    parser.add_argument('--dataset', help="dataset folder name", default='tpc-h_sf10_100-shifting')
     parser.add_argument("--size", help="size of the slide window", type=int, default=20)
     parser.add_argument("--batch", help="batch size (default: 10)", type=int, default=10)
     args = parser.parse_args()
@@ -71,7 +71,7 @@ def main():
             embedding = reg._BaoRegression__net.get_fixed_features(trees)
             mmd_score_p1.append(mmd(embedding, emb_p0))
 
-        scatter_plot("Phase1", pred1, mmd_score_p1, "results/mmd_vs_regret_p1.png")
+        scatter_plot("Phase1", pred1, mmd_score_p1, "results/prototype/vs_regrets/mmd_vs_regret_p1.png")
         logger.info("Phase1: mmd vs regret plot saved!")
 
         mmd_score_p2 = []
@@ -81,7 +81,7 @@ def main():
             embedding = reg._BaoRegression__net.get_fixed_features(trees)
             mmd_score_p2.append(mmd(embedding, emb_p0))
 
-        scatter_plot("Phase2", pred2, mmd_score_p2, "results/mmd_vs_regret_p2.png")
+        scatter_plot("Phase2", pred2, mmd_score_p2, "results/prototype/vs_regrets/mmd_vs_regret_p2.png")
         logger.info("Phase2: mmd vs regret plot saved!")
 
 

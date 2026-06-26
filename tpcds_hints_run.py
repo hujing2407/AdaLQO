@@ -17,7 +17,7 @@ QUERY_DIR = "dataset/queries/tpcds_queries"
 RESULT_DIR = "dataset/tpc-ds"
 os.makedirs(RESULT_DIR, exist_ok=True)
 
-sql_path = os.path.join(QUERY_DIR, "tpcds_test.sql")
+sql_path = os.path.join(QUERY_DIR, "tpcds_10gb_queries_1to8j_0.25addjp_0.5lp_10k.sql")
 
 
 def reset_pg_settings(cur):

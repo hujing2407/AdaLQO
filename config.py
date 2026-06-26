@@ -20,7 +20,7 @@ class Config:
         "password": "123",  # 建议实际生产环境使用环境变量
         "host": "192.168.0.225" if platform.system() == "Darwin" else "localhost",
         "port": "5432",
-        "options": "-c statement_timeout=600000"
+        "options": "-c statement_timeout=60000"
     }
 
     HINTS_OFF = [

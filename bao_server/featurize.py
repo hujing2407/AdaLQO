@@ -1,7 +1,7 @@
 import numpy as np
 
-JOIN_TYPES = ["Nested Loop", "Hash Join", "Merge Join"]
-LEAF_TYPES = ["Seq Scan", "Index Scan", "Index Only Scan", "Bitmap Index Scan"]
+JOIN_TYPES = ["Nested Loop", "Hash Join", "Merge Join", "BitmapAnd", "BitmapOr"]
+LEAF_TYPES = ["Seq Scan", "Index Scan", "Index Only Scan", "Bitmap Index Scan","Result"]
 ALL_TYPES = JOIN_TYPES + LEAF_TYPES
 
 
@@ -20,24 +20,37 @@ class TreeBuilder:
         self.__stats = stats_extractor
         self.__relations = sorted(relations, key=lambda x: len(x), reverse=True)
 
+    # def __relation_name(self, node):
+    #     if "Relation Name" in node:
+    #         return node["Relation Name"]
+    #
+    #     if node["Node Type"] == "Bitmap Index Scan":
+    #         # find the first (longest) relation name that appears in the index name
+    #         name_key = "Index Name" if "Index Name" in node else "Relation Name"
+    #         if name_key not in node:
+    #             print(node)
+    #             raise TreeBuilderError("Bitmap operator did not have an index name or a relation name")
+    #         for rel in self.__relations:
+    #             if rel in node[name_key]:
+    #                 return rel
+    #
+    #         raise TreeBuilderError("Could not find relation name for bitmap index scan")
+    #
+    #     raise TreeBuilderError("Cannot extract relation type from node")
     def __relation_name(self, node):
         if "Relation Name" in node:
             return node["Relation Name"]
 
+        if node["Node Type"] == "Result":
+            return "__RESULT__"
+
         if node["Node Type"] == "Bitmap Index Scan":
-            # find the first (longest) relation name that appears in the index name
-            name_key = "Index Name" if "Index Name" in node else "Relation Name"
-            if name_key not in node:
-                print(node)
-                raise TreeBuilderError("Bitmap operator did not have an index name or a relation name")
-            for rel in self.__relations:
-                if rel in node[name_key]:
-                    return rel
+            if "Index Name" in node:
+                return node["Index Name"]
+            raise TreeBuilderError("Bitmap Index Scan did not have Index Name")
 
-            raise TreeBuilderError("Could not find relation name for bitmap index scan")
+        raise TreeBuilderError("Cannot extract relation type from node: " + str(node))
 
-        raise TreeBuilderError("Cannot extract relation type from node")
-                
     def __featurize_join(self, node):
         assert is_join(node)
         arr = np.zeros(len(ALL_TYPES))
@@ -51,22 +64,63 @@ class TreeBuilder:
         return (np.concatenate((arr, self.__stats(node))),
                 self.__relation_name(node))
 
+    # def plan_to_feature_tree(self, plan):
+    #     children = plan["Plans"] if "Plans" in plan else []
+    #
+    #     if len(children) == 1:
+    #         return self.plan_to_feature_tree(children[0])
+    #
+    #     # if is_join(plan):
+    #     #     assert len(children) == 2
+    #     #     my_vec = self.__featurize_join(plan)
+    #     #     left = self.plan_to_feature_tree(children[0])
+    #     #     right = self.plan_to_feature_tree(children[1])
+    #     #     return (my_vec, left, right)
+    #     if is_join(plan):
+    #         my_vec = self.__featurize_join(plan)
+    #
+    #         if len(children) == 0:
+    #             raise TreeBuilderError("Join-like node had no children: " + str(plan))
+    #
+    #         if len(children) == 1:
+    #             return self.plan_to_feature_tree(children[0])
+    #
+    #         left = self.plan_to_feature_tree(children[0])
+    #         right = self.plan_to_feature_tree(children[1])
+    #
+    #         # 如果超过两个 child，右侧递归折叠成 binary tree
+    #         for child in children[2:]:
+    #             right = (my_vec, right, self.plan_to_feature_tree(child))
+    #
+    #         return (my_vec, left, right)
+    #
+    #     if is_scan(plan):
+    #         assert not children
+    #         return self.__featurize_scan(plan)
+    #
+    #     raise TreeBuilderError("Node wasn't transparent, a join, or a scan: " + str(plan))
     def plan_to_feature_tree(self, plan):
         children = plan["Plans"] if "Plans" in plan else []
+
+        if is_scan(plan):
+            return self.__featurize_scan(plan)
 
         if len(children) == 1:
             return self.plan_to_feature_tree(children[0])
 
         if is_join(plan):
-            assert len(children) == 2
             my_vec = self.__featurize_join(plan)
+
+            if len(children) == 0:
+                raise TreeBuilderError("Join-like node had no children: " + str(plan))
+
             left = self.plan_to_feature_tree(children[0])
             right = self.plan_to_feature_tree(children[1])
-            return (my_vec, left, right)
 
-        if is_scan(plan):
-            assert not children
-            return self.__featurize_scan(plan)
+            for child in children[2:]:
+                right = (my_vec, right, self.plan_to_feature_tree(child))
+
+            return (my_vec, left, right)
 
         raise TreeBuilderError("Node wasn't transparent, a join, or a scan: " + str(plan))
 
@@ -145,12 +199,33 @@ def get_plan_stats(data):
         )
         
 
+# def get_all_relations(data):
+#     all_rels = []
+#
+#     def recurse(plan):
+#         if "Relation Name" in plan:
+#             yield plan["Relation Name"]
+#
+#         if "Plans" in plan:
+#             for child in plan["Plans"]:
+#                 yield from recurse(child)
+#
+#     for plan in data:
+#         all_rels.extend(list(recurse(plan["Plan"])))
+#
+#     return set(all_rels)
 def get_all_relations(data):
     all_rels = []
-    
+
     def recurse(plan):
         if "Relation Name" in plan:
             yield plan["Relation Name"]
+
+        if "Index Name" in plan:
+            yield plan["Index Name"]
+
+        if plan.get("Node Type") == "Result":
+            yield "__RESULT__"
 
         if "Plans" in plan:
             for child in plan["Plans"]:
@@ -158,7 +233,7 @@ def get_all_relations(data):
 
     for plan in data:
         all_rels.extend(list(recurse(plan["Plan"])))
-        
+
     return set(all_rels)
 
 def get_featurized_trees(data):

@@ -15,12 +15,12 @@ class Config:
 
     # 默认数据库配置（作为 Fallback）
     DEFAULT_DB_PARAMS = {
-        "dbname": "tpch",
+        "dbname": "tpcds",
         "user": "postgres",
         "password": "123",  # 建议实际生产环境使用环境变量
         "host": "192.168.0.225" if platform.system() == "Darwin" else "localhost",
         "port": "5432",
-        "options": "-c statement_timeout=600000"
+        "options": "-c statement_timeout=60000"
     }
 
     HINTS_OFF = [
@@ -38,14 +38,6 @@ class Config:
         'set enable_mergejoin = off; set enable_hashjoin = off;',
         'set enable_mergejoin = off; set enable_hashjoin = off; set enable_indexscan = off;'
     ]
-
-    DB_CONFIG = {
-        "host": "localhost",
-        "port": 5432,
-        "dbname": "tpcds",
-        "user": "postgres",
-        "password": "123",
-    }
 
     QUERY_DIR = "dataset/queries/tpc-h_sf1_10"  # SQL文件路径
     EXPLAIN_OR_NOT = False  # 是否开启解释器

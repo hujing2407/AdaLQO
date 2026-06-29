@@ -1,26 +1,53 @@
 import numpy as np
 import json
+from pathlib import Path
 import pandas as pd
 import ast
+import re
 import matplotlib.pyplot as plt
 from pandas import DataFrame, Series
 
 
 def load_data(dataset_name):
-    df = pd.read_csv(f"dataset/{dataset_name}/execution_results.csv")
-    df["latency_list"] = df["latency_list"].apply(ast.literal_eval)
+    df = pd.read_csv(
+        f"dataset/{dataset_name}/execution_results.csv",
+        converters={"latency_list": parse_latency_list}
+    )
 
     def load_plans(plan_path):
+        plan_path = Path(str(plan_path).replace("\\", "/"))
         with open(plan_path, "r") as f:
             return json.load(f)
 
     df["plans"] = df["plan_path"].apply(load_plans)
 
     df["plans"] = df["plans"].apply(
-        lambda plans: [wrap_plan(p) for p in plans]
+        lambda plans: [wrap_plan(p) for p in plans if p is not None]
     )
+
+    # df["latency_list"] = df["latency_list"].apply(
+    #     lambda xs: [x for x in xs if np.isfinite(x)] if isinstance(xs, list) else xs
+    # )
+
     return df
 
+def parse_latency_list(s):
+    if pd.isna(s):
+        return []
+
+    s = str(s)
+
+    # 把 inf / -inf / nan 替换成 None，避免 ast.literal_eval 报错
+    s = re.sub(r"(?<![\w.])-?inf(?![\w.])", "None", s)
+    s = re.sub(r"(?<![\w.])nan(?![\w.])", "None", s, flags=re.IGNORECASE)
+
+    xs = ast.literal_eval(s)
+    return xs
+    # 读的时候直接跳过 None / inf / nan
+    # return [
+    #     x for x in xs
+    #     if x is not None and np.isfinite(x)
+    # ]
 
 def wrap_plan(plan):
     if "Plan" in plan:
@@ -40,9 +67,14 @@ def split_by_batch_size(df, batch_size=100):
 
 def split_dataset(df: DataFrame, batch_size: int, random_state:int):
     phase_batches = []
-    df_shuffled = df.sample(frac=1, random_state=random_state).reset_index(drop=True)
-    # df_shuffled = df
-    for phase_id, phase_df in df_shuffled.groupby("phase"):
+    if random_state is not None:
+        rand = np.random.seed(random_state)
+        df_to_split = df.sample(frac=1, random_state=rand).reset_index(drop=True)
+    else:
+        df_to_split = df
+
+    if "phase" not in df.columns: df_to_split["phase"] = "phase_0"
+    for phase_id, phase_df in df_to_split.groupby("phase"):
         phase_batches.append(split_by_batch_size(phase_df, batch_size))
 
     return phase_batches

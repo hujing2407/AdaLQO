@@ -92,16 +92,16 @@ def get_training_data(df: DataFrame):
     return X, y
 
 
-def prediction(model, data):
+def prediction(model, queries):
     results = []
-    for _, row in data.iterrows():
-        plans = row["plans"]
-        latencies = row["latency_list"]
+    for _, query in queries.iterrows():
+        plans = query["plans"]
+        latencies = query["latency_list"]
         preds = model.predict(plans)
         chosen_idx = np.argmin(preds)
         best_idx = np.argmin(latencies)
         result = {
-            "query_id": row["query_id"],
+            "query_id": query["query_id"],
             "bao_latency":
                 latencies[chosen_idx],
             "best_latency":

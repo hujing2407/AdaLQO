@@ -1,25 +1,150 @@
-import sys
 import argparse
-from typing import Any
+import time
+import os
 
-from pandas import DataFrame, Series
-
-from config import Config
-from utils import *
-from AdaLQO.shift_detector import mmd
-from AdaLQO.utils import load_data, plot_res, prediction, scatter_plot, scatter_plot, split_dataset
+import numpy as np
+import pandas as pd
+import torch
+import sys
+import AdaLQO.utils as utils
+from AdaLQO.utils import plot_res
+from AdaLQO.utils import prediction
+from AdaLQO.shift_detector import mmd,ws,ks_values_pca
+import AdaLQO.replay_buffer as re_buf
+from AdaLQO.utils import sle
 
 sys.path.insert(0, 'bao_server')
-import bao_server.model as model
-from bao_server.model import BaoRegression
+import bao_server.model as bao_model
+import copy
+import random
 
-# TODO:// Remove the import from ShiftHandler if the retrain strategies no need
-# sys.path.append('ShiftHandler')
-# from replay_buffer import summarizer
 
+from config import Config
 logger = Config.setup_logging()
-PHASE_NUM = 3
+# PHASE_NUM = 3
 
+def train_and_predict(x, y, train_list, test_list, buffer, buffer_size, num_tasks=6, concentration=1e-4,
+                      tradeoff=0.5, seed=0):
+    # Load training and validation data
+    print("buffer: {}".format(buffer))
+    print("seed: {}".format(seed))
+    print("concentration: {}".format(concentration))
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+
+    reg = bao_model.BaoRegression(have_cache_data=True, verbose=False)
+    reg.fit_feature_extractor(x, y)
+
+    all_performs = []
+
+    latest_buffer = []
+    if buffer == 'lwp':
+        handler_buffer = re_buf.summarizer(buffer_limit=buffer_size, loss_ada=True,
+                                    concentration=concentration,
+                                    is_move=False)
+    else:
+        handler_buffer = re_buf.summarizer(buffer_limit=buffer_size, loss_ada=False,
+                                    concentration=concentration,
+                                    is_move=False)
+    num_queries_seen_far = 0
+
+    for task_id in range(num_tasks):
+        # first replay old queries
+        replay_list = []
+        if buffer == 'cbp' or buffer.lower() == 'lwp':
+            replay_queries_tmp, _ = handler_buffer.get_all_samples()
+            for (_, y_i, plan, _, _) in replay_queries_tmp:
+                replay_list.append((plan, y_i))
+        elif buffer == 'latest':
+            replay_list = latest_buffer
+        elif buffer == 'rs':
+            replay_list = latest_buffer
+        elif buffer == 'all':
+            replay_list = latest_buffer
+
+        (x_train, y_train) = train_list[task_id]
+
+        current_bs = len(x_train)
+        x_train_all = copy.deepcopy(x_train)
+        y_train_all = copy.deepcopy(y_train)
+
+        for (plan, y_i) in replay_list:
+            x_train_all.append(plan)
+            y_train_all.append(y_i)
+
+        ada_size = False
+        if buffer.lower() == 'lwp':
+            ada_size = True
+
+        if tradeoff != 0 and buffer != 'latest' and len(replay_list) > 0:
+            idx_list, current_losses, replay_idx_list, replay_losses_list = reg.fit_model(x_train_all, y_train_all,
+                                                                                          tradeoff=tradeoff,
+                                                                                          ada_size=ada_size,
+                                                                                          size_current_batch=current_bs,
+                                                                                          seed=seed)
+        else:
+            idx_list, current_losses, replay_idx_list, replay_losses_list = reg.fit_model(x_train_all, y_train_all,
+                                                                                          seed=seed,
+                                                                                          ada_size=ada_size)
+
+        # update buffer size based on loss
+        if buffer == 'lwp' and len(replay_losses_list):
+            norm_losses_list = [None] * handler_buffer.buffer_size
+            for (q_id, loss) in zip(replay_idx_list, replay_losses_list):
+                norm_losses_list[q_id] = loss[0]
+            handler_buffer.update_losses(norm_losses_list)
+
+        if task_id > 1:
+            prev_perform_this_task = []
+            for prev_task in range(3):
+                (x_test, y_test) = test_list[prev_task]
+                preds = reg.predict(x_test)
+                preds = np.squeeze(preds)
+                square_error = sle(preds, y_test)
+                res = {"buffer": buffer, "size": buffer_size, "concentration": concentration, "seed": seed,
+                       "median": np.percentile(square_error, 50), "95": np.percentile(square_error, 95),
+                       "max": np.max(square_error), "mean": np.mean(square_error)}
+                prev_perform_this_task.append(res)
+
+            all_performs.append(prev_perform_this_task)
+
+        if task_id == num_tasks - 1:
+            break
+
+        # add new queries to the replay buffer
+        (x_train, y_train) = train_list[task_id]
+        if buffer == 'cbp' or buffer.lower() == 'lwp':
+            experience_features = reg.get_before_features(x_train)
+            for i in range(experience_features.shape[0]):
+                q_feature = experience_features[i, :]
+                if buffer == 'lwp':
+                    loss_id = idx_list.index(i)
+                    handler_buffer.process_a_query(q_feature, y_train[i], x_train[i], None, current_losses[loss_id][0])
+                else:
+                    handler_buffer.process_a_query(q_feature, y_train[i], x_train[i])
+        elif buffer == 'latest':
+            for i in range(len(x_train)):
+                if len(latest_buffer) < buffer_size:
+                    latest_buffer.append((x_train[i], y_train[i]))
+                else:
+                    latest_buffer.pop(0)
+                    latest_buffer.append((x_train[i], y_train[i]))
+        elif buffer == 'rs':
+            for i in range(len(x_train)):
+                if len(latest_buffer) < buffer_size:
+                    latest_buffer.append((x_train[i], y_train[i]))
+                else:
+                    random_i = random.uniform(0, 1)
+                    if random_i < float(len(latest_buffer)) / (num_queries_seen_far + 1):
+                        latest_buffer.pop(0)
+                        latest_buffer.append((x_train[i], y_train[i]))
+                num_queries_seen_far += 1
+        elif buffer == 'all':
+            for i in range(len(x_train)):
+                latest_buffer.append((x_train[i], y_train[i]))
+
+    return None
 
 def main():
     parser = argparse.ArgumentParser()
@@ -32,88 +157,25 @@ def main():
     window_size = args.size
     batch_size = args.batch
 
+    # concentrations = [1e-2, 1e-1, 1.0, 10, 100]
+    concentrations = [1.0]
+    # random_seeds = list(range(10))
+    random_seeds = [0]
+
     # 1. Load DataSet
     # 1.1 load all datasets - queries, plans, latecies
-    df = load_data(ds_name)
-    df_shuffled = df.sample(frac=1, random_state=42).reset_index(drop=True)
-    data = split_dataset(df_shuffled, batch_size)
-
-    # data[i] - phase, data[i][j] - batch queries
-    p0_df = df[df["phase"] == "phase_0"]
-    p1_df = df[df["phase"] == "phase_1"]
-    p2_df = df[df["phase"] == "phase_2"]
+    df = pd.read_pickle("dataset/tpc-ds/data_df.pkl")
+    BATCH_SIZE = 100
+    data = utils.split_dataset(df, batch_size=BATCH_SIZE, random_state=None)
 
     # 2. Training BAO Model with the first batch of data
-    X, y = train_ds_process(data[0][0])
-    reg = train_model(X, y)
 
-    # 4. Queries(Plans) Featurization
-    p0_plans = []
-    for plans in p0_df["plans"]:
-        p0_plans.extend(plans)
-    tree_p0 = reg._BaoRegression__tree_transform.transform(p0_plans)
-    emb_p0 = reg._BaoRegression__net.get_fixed_features(tree_p0)
-
-    for i in len(data):
-        # 3. Prediction and Evaluation
-        # pred1 = prediction(reg, p1_df, f"results/p1_pred.csv")
-        # plot_res("Phase1", pred1, f"results/p1_pred.png")
-        # logger.info("Phase1: Prediction csv and plot saved!")
-        # pred2 = prediction(reg, p2_df, f"results/p2_pred.csv")
-        # plot_res("Phase2", pred2, f"results/p2_pred.png")
-        # logger.info("Phase2: Prediction csv and plot saved!")
-
-        # 5. MMD scores between query/plans and phase0 plans
-        mmd_score_p1 = []
-        p1_plans = p1_df["plans"]
-        for p in p1_plans:
-            trees = reg._BaoRegression__tree_transform.transform(p)
-            embedding = reg._BaoRegression__net.get_fixed_features(trees)
-            mmd_score_p1.append(mmd(embedding, emb_p0))
-
-        scatter_plot("Phase1", pred1, mmd_score_p1, "results/prototype/vs_regrets/mmd_vs_regret_p1.png")
-        logger.info("Phase1: mmd vs regret plot saved!")
-
-        mmd_score_p2 = []
-        p2_plans = p2_df["plans"]
-        for p in p2_plans:
-            trees = reg._BaoRegression__tree_transform.transform(p)
-            embedding = reg._BaoRegression__net.get_fixed_features(trees)
-            mmd_score_p2.append(mmd(embedding, emb_p0))
-
-        scatter_plot("Phase2", pred2, mmd_score_p2, "results/prototype/vs_regrets/mmd_vs_regret_p2.png")
-        logger.info("Phase2: mmd vs regret plot saved!")
+    for concentration in concentrations:
+        train_and_predict(x_f, y_f, train_list, test_list, 'cbp', args.buffersize,
+            concentration=concentration, seed=random_seeds[0])
 
 
-def train_ds_process(p0_df: Series | DataFrame | Any) -> tuple[list[Any], list[Any]]:
-    X = []
-    y = []
-    for _, row in p0_df.iterrows():
-        plans = row["plans"]
-        latencies = row["latency_list"]
-        for plan, latency in zip(plans, latencies):
-            X.append(plan)
-            y.append(latency)
-    return X, y
 
-
-def train_model(X: list[Any], y: list[Any]) -> BaoRegression:
-    # TODO:// have_cache_data=False, since Buffer Feature missed. Fix it later
-    reg = model.BaoRegression(have_cache_data=False, verbose=False)
-
-    try:
-        reg.fit_feature_extractor(X, y)
-    except Exception as e:
-        logger.error("ERROR:", e)
-
-    logger.info("Bao model training......")
-    reg.fit_model(X, y, seed=42, ada_size=False)
-    torch.save(
-        reg._BaoRegression__net.state_dict(),
-        "results/model/bao_model.pt"
-    )
-    logger.info("Bao model trained & saved!")
-    return reg
 
 
 if __name__ == "__main__":

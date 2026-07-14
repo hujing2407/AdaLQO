@@ -9,7 +9,7 @@ import sys
 import AdaLQO.utils as utils
 from AdaLQO.utils import plot_res
 from AdaLQO.utils import prediction
-from AdaLQO.shift_detector import mmd,ws,ks_values_pca
+from AdaLQO.shift_detector import mmd, ws, ks_values_pca
 import AdaLQO.replay_buffer as re_buf
 from AdaLQO.utils import sle
 
@@ -18,12 +18,14 @@ import bao_server.model as bao_model
 import copy
 import random
 
-
 from config import Config
+
 logger = Config.setup_logging()
+
+
 # PHASE_NUM = 3
 
-def train_and_predict(x, y, train_list, test_list, buffer, buffer_size, num_tasks=6, concentration=1e-4,
+def train_and_predict(data, buffer, buffer_size, num_tasks=6, concentration=1e-4,
                       tradeoff=0.5, seed=0):
     # Load training and validation data
     print("buffer: {}".format(buffer))
@@ -33,37 +35,30 @@ def train_and_predict(x, y, train_list, test_list, buffer, buffer_size, num_task
     random.seed(seed)
     torch.manual_seed(seed)
 
-    reg = bao_model.BaoRegression(have_cache_data=True, verbose=False)
-    reg.fit_feature_extractor(x, y)
+    model = bao_model.BaoRegression(have_cache_data=False, verbose=False)
+    # model.fit_feature_extractor(X, y)
+    # model.fit_model(X, y, seed=42, ada_size=False)
 
-    all_performs = []
-
+    # Initial replay buffer
     latest_buffer = []
     if buffer == 'lwp':
         handler_buffer = re_buf.summarizer(buffer_limit=buffer_size, loss_ada=True,
-                                    concentration=concentration,
-                                    is_move=False)
+                                           concentration=concentration,
+                                           is_move=False)
     else:
         handler_buffer = re_buf.summarizer(buffer_limit=buffer_size, loss_ada=False,
-                                    concentration=concentration,
-                                    is_move=False)
+                                           concentration=concentration,
+                                           is_move=False)
     num_queries_seen_far = 0
 
-    for task_id in range(num_tasks):
+    for task_id in range(len(data[0])):
         # first replay old queries
         replay_list = []
-        if buffer == 'cbp' or buffer.lower() == 'lwp':
-            replay_queries_tmp, _ = handler_buffer.get_all_samples()
-            for (_, y_i, plan, _, _) in replay_queries_tmp:
-                replay_list.append((plan, y_i))
-        elif buffer == 'latest':
-            replay_list = latest_buffer
-        elif buffer == 'rs':
-            replay_list = latest_buffer
-        elif buffer == 'all':
-            replay_list = latest_buffer
+        replay_queries_tmp, _ = handler_buffer.get_all_samples()
+        for (_, y_i, plan, _, _) in replay_queries_tmp:
+            replay_list.append((plan, y_i))
 
-        (x_train, y_train) = train_list[task_id]
+        (x_train, y_train) = utils.get_training_data(data[0][task_id])
 
         current_bs = len(x_train)
         x_train_all = copy.deepcopy(x_train)
@@ -77,16 +72,15 @@ def train_and_predict(x, y, train_list, test_list, buffer, buffer_size, num_task
         if buffer.lower() == 'lwp':
             ada_size = True
 
-        if tradeoff != 0 and buffer != 'latest' and len(replay_list) > 0:
-            idx_list, current_losses, replay_idx_list, replay_losses_list = reg.fit_model(x_train_all, y_train_all,
-                                                                                          tradeoff=tradeoff,
-                                                                                          ada_size=ada_size,
-                                                                                          size_current_batch=current_bs,
-                                                                                          seed=seed)
+        if tradeoff != 0 and len(replay_list) > 0:
+            model.fit_feature_extractor(x_train_all, y_train_all)
+            idx_list, current_losses, replay_idx_list, replay_losses_list = (
+                model.fit_model(x_train_all, y_train_all, tradeoff=tradeoff, ada_size=ada_size,
+                                size_current_batch=current_bs, seed=seed))
         else:
-            idx_list, current_losses, replay_idx_list, replay_losses_list = reg.fit_model(x_train_all, y_train_all,
-                                                                                          seed=seed,
-                                                                                          ada_size=ada_size)
+            model.fit_feature_extractor(x_train_all, y_train_all)
+            idx_list, current_losses, replay_idx_list, replay_losses_list = (
+                model.fit_model(x_train_all, y_train_all, seed=seed, ada_size=ada_size))
 
         # update buffer size based on loss
         if buffer == 'lwp' and len(replay_losses_list):
@@ -95,62 +89,29 @@ def train_and_predict(x, y, train_list, test_list, buffer, buffer_size, num_task
                 norm_losses_list[q_id] = loss[0]
             handler_buffer.update_losses(norm_losses_list)
 
-        if task_id > 1:
-            prev_perform_this_task = []
-            for prev_task in range(3):
-                (x_test, y_test) = test_list[prev_task]
-                preds = reg.predict(x_test)
-                preds = np.squeeze(preds)
-                square_error = sle(preds, y_test)
-                res = {"buffer": buffer, "size": buffer_size, "concentration": concentration, "seed": seed,
-                       "median": np.percentile(square_error, 50), "95": np.percentile(square_error, 95),
-                       "max": np.max(square_error), "mean": np.mean(square_error)}
-                prev_perform_this_task.append(res)
-
-            all_performs.append(prev_perform_this_task)
-
-        if task_id == num_tasks - 1:
-            break
+        # predict the queries in current task
+        # TODO://
 
         # add new queries to the replay buffer
-        (x_train, y_train) = train_list[task_id]
-        if buffer == 'cbp' or buffer.lower() == 'lwp':
-            experience_features = reg.get_before_features(x_train)
-            for i in range(experience_features.shape[0]):
-                q_feature = experience_features[i, :]
-                if buffer == 'lwp':
-                    loss_id = idx_list.index(i)
-                    handler_buffer.process_a_query(q_feature, y_train[i], x_train[i], None, current_losses[loss_id][0])
-                else:
-                    handler_buffer.process_a_query(q_feature, y_train[i], x_train[i])
-        elif buffer == 'latest':
-            for i in range(len(x_train)):
-                if len(latest_buffer) < buffer_size:
-                    latest_buffer.append((x_train[i], y_train[i]))
-                else:
-                    latest_buffer.pop(0)
-                    latest_buffer.append((x_train[i], y_train[i]))
-        elif buffer == 'rs':
-            for i in range(len(x_train)):
-                if len(latest_buffer) < buffer_size:
-                    latest_buffer.append((x_train[i], y_train[i]))
-                else:
-                    random_i = random.uniform(0, 1)
-                    if random_i < float(len(latest_buffer)) / (num_queries_seen_far + 1):
-                        latest_buffer.pop(0)
-                        latest_buffer.append((x_train[i], y_train[i]))
-                num_queries_seen_far += 1
-        elif buffer == 'all':
-            for i in range(len(x_train)):
-                latest_buffer.append((x_train[i], y_train[i]))
+        # (x_train, y_train) = train_list[task_id]
+        experience_features = model.get_before_features(x_train)
+        for i in range(experience_features.shape[0]):
+            q_feature = experience_features[i, :]
+            if buffer == 'lwp':
+                loss_id = idx_list.index(i)
+                handler_buffer.process_a_query(q_feature, y_train[i], x_train[i], None, current_losses[loss_id][0])
+            else:
+                handler_buffer.process_a_query(q_feature, y_train[i], x_train[i])
 
     return None
+
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', help="dataset folder name", default='tpc-h_sf10_100-shifting')
     parser.add_argument("--size", help="size of the slide window", type=int, default=20)
     parser.add_argument("--batch", help="batch size (default: 10)", type=int, default=10)
+    parser.add_argument("--buffersize", help="buffer size (default: 100)", type=int, default=100)
     args = parser.parse_args()
 
     ds_name = args.dataset
@@ -169,13 +130,8 @@ def main():
     data = utils.split_dataset(df, batch_size=BATCH_SIZE, random_state=None)
 
     # 2. Training BAO Model with the first batch of data
-
-    for concentration in concentrations:
-        train_and_predict(x_f, y_f, train_list, test_list, 'cbp', args.buffersize,
-            concentration=concentration, seed=random_seeds[0])
-
-
-
+    for c in concentrations:
+        train_and_predict(data, 'cbp', args.buffersize, concentration=c, seed=random_seeds[0])
 
 
 if __name__ == "__main__":

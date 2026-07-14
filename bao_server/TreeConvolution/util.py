@@ -191,7 +191,7 @@ def get_fixed_trees(trees, transformer, left_child, right_child):
     # flat_trees = _pad_and_combine_with_max_dim(flat_trees, 6)
 
     indexes = [_tree_conv_indexes(x, left_child, right_child) for x in trees]
-    indexes = _pad_and_combine_with_max_dim(indexes, 15)
+    indexes = _pad_and_combine_with_max_dim(indexes, 128)
 
     return (flat_trees, indexes)
 

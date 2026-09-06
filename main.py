@@ -4,6 +4,7 @@ import os
 import copy
 import joblib
 import random
+import numbers
 
 from config import Config
 import numpy as np
@@ -25,8 +26,9 @@ from config import Config
 logger = Config.setup_logging()
 
 INIT_TRAIN_NUM  = 100
-buffer = 'rs'
-buffer_size = 2000
+TRIGGER_NUM = 100
+BUFFER = 'rs'
+BUF_SIZEE = 2000
 concentration = 0.1
 
 def init_bao_model(train_data):
@@ -48,7 +50,9 @@ def retrain(latest_buffer):
         y_train_all.append(y_i)
 
     print(f"training data with {len(x_train_all)} samples")
-    return train_bao_model(x_train_all, y_train_all)
+    new_model = train_bao_model(x_train_all, y_train_all)
+    base_embedding = det.embedding_plans(new_model, x_train_all)
+    return new_model, base_embedding
 
     return model
 def main():
@@ -64,20 +68,25 @@ def main():
     cl_df = df_all[df_all["query_id"].isin(cl_data_idx)].copy()
     cl_df = cl_df.drop_duplicates(subset=['query_id'])
 
+    # temp for debugging code, TODO:// remove later
+    cl_df = cl_df.reset_index(drop=True)
+
     # 1.3 Load regret classifier
     package = joblib.load("models/classifier_best_model.pkl")
     regret_classifier = package["model"]
     regret_classifier_features = package["feature_names"]
+    regret_classifier_features.pop(0)
 
     # 2. Train BAO Model with the first batch of data
     train_data = df_all[df_all['latency_list'].map(len) == 13][:INIT_TRAIN_NUM]
     X_init_train,y_init_train, bao_ori = init_bao_model(train_data)
+    base_embedding = det.embedding_plans(bao_ori, X_init_train)
 
     # 3. Predict result with bao_init model
-    ori_res_list = []
-    for index, row in cl_df.iterrows():
-        res = pred_single_query(bao_ori, row)
-        ori_res_list.append(res)
+    # ori_res_list = []
+    # for index, row in cl_df.iterrows():
+    #     res = pred_single_query(bao_ori, row)
+    #     ori_res_list.append(res)
 
     # 4. Create buffer
     latest_buffer = []
@@ -88,7 +97,7 @@ def main():
     num_queries_seen_far = 0
     # Add init training queries to the replay buffer
     for i in range(len(X_init_train)):
-        if len(latest_buffer) < buffer_size:
+        if len(latest_buffer) < BUF_SIZEE:
             latest_buffer.append((X_init_train[i], y_init_train[i]))
         else:
             random_i = random.uniform(0, 1)
@@ -109,32 +118,37 @@ def main():
         X_new = row["plans"]
         y_new = row["latency_list"]
 
-        if counter >= 1000:
+        if counter >= TRIGGER_NUM:
             print(f"Retraining when in index :{index}")
-            cl_model = retrain(latest_buffer)
+            cl_model, base_embedding = retrain(latest_buffer)
             counter = 0
 
-        # for (plan, y_i) in latest_buffer:
-        #     x_train_all.append(plan)
-        #     y_train_all.append(y_i)
-        # base_embedding = det.embedding_plans(reg_ori, x_train_all)
-        # cur_embedding = det.embedding_single_query(reg_ori, X_new)
-        #
-        # base_embedding = to_numpy(base_embedding)
-        # scaler = StandardScaler()
-        # scaler.fit(base_embedding)
-        # base_scaled = scaler.transform(base_embedding)
-        # cur_scaled = scaler.transform(cur_embedding)
-        #
-        # scores = det.record_regret(reg_ori, cur_scaled, base_scaled)
-        #
-        #
-        # is_not_degrad = classifier.predict(X_new)
+        cur_embedding = det.embedding_single_query(cl_model, X_new)
+        base_embedding = utils.to_numpy(base_embedding)
+        scaler = StandardScaler()
+        scaler.fit(base_embedding)
+        base_scaled = scaler.transform(base_embedding)
+        cur_scaled = scaler.transform(cur_embedding)
 
-        is_not_degrad = True
-        if is_not_degrad:
+        scores = dist_scores.record_regret(cl_model, cur_scaled, base_scaled)
+        ks_stat, ks_log_pvalue = utils.parse_ks_result(scores["ks_result"])
+        scores["ks_stat"] = ks_stat
+        scores["ks_log_pvalue"] = -np.log10(ks_log_pvalue)
+
+        selected_scores = { k: scores[k] for k in regret_classifier_features}
+        # selected_scores = {
+        #     k: v
+        #     for k, v in selected_scores.items()
+        #     if isinstance(v, numbers.Number)
+        # }
+        selected_scores = pd.DataFrame([selected_scores])
+
+
+        is_degrad = regret_classifier.predict(selected_scores)
+
+        if not is_degrad:
             for i in range(len(X_new)):
-                if len(latest_buffer) < buffer_size:
+                if len(latest_buffer) < BUF_SIZEE:
                     latest_buffer.append((X_new[i], y_new[i]))
                 else:
                     random_i = random.uniform(0, 1)
@@ -145,17 +159,17 @@ def main():
             counter += 1
         else:
             latest_buffer.append((X_new[i], y_new[i]))
-            if len(latest_buffer) > buffer_size:
-                latest_buffer = latest_buffer[len(latest_buffer) - buffer_size:]
+            if len(latest_buffer) > BUF_SIZEE:
+                latest_buffer = latest_buffer[len(latest_buffer) - BUF_SIZEE:]
             counter += 1
 
         res = pred_single_query(cl_model, row)
         cl_res_list.append(res)
 
-        ori_res = pd.DataFrame(ori_res_list)
-        cl_res = pd.DataFrame(cl_res_list)
-        ori_res.to_csv("ori_res.csv")
-        cl_res.to_csv("cl_res.csv")
+    # ori_res = pd.DataFrame(ori_res_list)
+    cl_res = pd.DataFrame(cl_res_list)
+    # ori_res.to_csv(f"ori_res.csv")
+    cl_res.to_csv(f"cl_res_counter{TRIGGER_NUM}_buf{BUF_SIZEE}_{BUFFER}.csv")
 
 
 if __name__ == "__main__":

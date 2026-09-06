@@ -2,12 +2,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Literal
+from dataclasses import asdict
 
 import numpy as np
+import torch
 from numpy.typing import ArrayLike, NDArray
 from scipy.spatial.distance import cdist, pdist
 from scipy.special import rel_entr
 from scipy.stats import ks_2samp, wasserstein_distance
+import AdaLQO.utils as utils
+import AdaLQO.shift_detector as det
 
 Aggregation = Literal["mean", "median", "sum", "max", "none"]
 BinStrategy = Literal["quantile", "uniform"]
@@ -812,6 +816,55 @@ def compute_distribution_distances(
         featurewise_kl_x_to_y=featurewise_kl_x_to_y,
         featurewise_kl_y_to_x=featurewise_kl_y_to_x,
     )
+
+def record_regret(model, cur_embedding, base_embedding):
+    device = next(
+        model._BaoRegression__net.parameters()
+    ).device
+
+    cur_tensor = utils.to_tensor(cur_embedding, device)
+    base_tensor = utils.to_tensor(base_embedding, device)
+    with torch.no_grad():
+        mmd_score = det.mmd(cur_tensor, base_tensor)
+
+    cur_np = utils.to_numpy(cur_embedding)
+    base_np = utils.to_numpy(base_embedding)
+
+    ks_result = det.ks_values_pca(cur_np, base_np)
+    ws_score = det.ws(cur_np, base_np)
+
+    result = compute_distribution_distances(
+        base_np,
+        cur_np,
+        # 逐特征结果如何汇总
+        aggregation="mean",
+        # 针对较小样本组只有 13 个样本
+        n_bins=3,
+        # 分位数分箱比等宽分箱更稳定
+        bin_strategy="quantile",
+        # 使用两组数据共同确定 bin 边界
+        bin_reference="combined",
+        # 每个 bin 加 0.5 个伪计数
+        smoothing=0.5,
+        # KL/JS 使用 log2
+        log_base=2.0,
+        # None 表示使用 median heuristic
+        mmd_sigma=None,
+        # 小样本情况下 biased 版本通常更稳定
+        mmd_unbiased=False,
+        energy_unbiased=False,
+    )
+    # if hasattr(mmd_score, "detach"):
+    #     mmd_value = float(mmd_score.detach().cpu().item())
+    # else:
+    #     mmd_value = float(mmd_score)
+
+    return {
+        "mmd_score": float(mmd_score.detach().cpu()),
+        "ks_result": ks_result,
+        "ws_score": ws_score,
+        **asdict(result),
+    }
 
 
 if __name__ == "__main__":

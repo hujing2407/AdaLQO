@@ -4,6 +4,7 @@ import numpy as np
 import json
 from pathlib import Path
 import pandas as pd
+import torch
 import ast
 import re
 import matplotlib.pyplot as plt
@@ -214,3 +215,29 @@ def get_results_by_tile(all_performs, tile='mean'):
 
     return avg_error
 
+def to_numpy(x):
+    if torch.is_tensor(x):
+        return x.detach().cpu().numpy()
+    return np.asarray(x)
+
+def to_tensor(x, device):
+    if torch.is_tensor(x):
+        return x.detach().to(device=device, dtype=torch.float32)
+
+    return torch.as_tensor(x, dtype=torch.float32, device=device)
+
+def parse_ks_result(value):
+    if pd.isna(value):
+        return np.nan, np.nan
+    value = str(value)
+    stat_match = re.search(
+        r"statistic\s*=\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)",
+        value
+    )
+    pvalue_match = re.search(
+        r"pvalue\s*=\s*([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)",
+        value
+    )
+    ks_stat = float(stat_match.group(1)) if stat_match else np.nan
+    ks_pvalue = float(pvalue_match.group(1)) if pvalue_match else np.nan
+    return ks_stat, ks_pvalue

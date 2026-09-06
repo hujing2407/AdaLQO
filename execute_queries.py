@@ -87,84 +87,85 @@ def run_query(cur, sql):
 # =========================================================
 # EXECUTE ALL QUERIES
 # =========================================================
-records = []
-for idx, item in enumerate(metadata):
-    with open(item["sql_path"], "r") as f:
-        sql = f.read()
-    try:
-        plan_list = []
-        latency_list = []
-        buffer_hit_list = []
-        buffer_read_list = []
-        buffer_info_list = []
-        for i, hint_sql in enumerate(HINTS_OFF):
-            reset_pg_settings(cursor)
-            if hint_sql.strip():
-                cursor.execute(hint_sql)
-            try:
-                logger.info(f"Executing query: {item['query_id']} with {i}th plan in {item['phase']}.")
-                plan_json, latency, buffer_info = run_query(cursor, sql)
 
-                plan_list.append(plan_json)
-                latency_list.append(latency)
-                buffer_hit_list.append(buffer_info["shared_hit_blocks"])
-                buffer_read_list.append(buffer_info["shared_read_blocks"])
-                buffer_info_list.append(buffer_info)
-            except Exception as e:
-                logger.error(f"Query failed: {sql} with {i}th plan.")
-                logger.error(e)
-                plan_list.append(None)
-                latency_list.append(float("inf"))
-                buffer_hit_list.append(None)
-                buffer_read_list.append(None)
-                buffer_info_list.append(None)
-
-        best_execute_time = min(latency_list)
-        phase_dir = os.path.join(
-            RESULT_DIR,
-            item["phase"],
-            item["query_template"]
-        )
-        os.makedirs(phase_dir, exist_ok=True)
-
-        # Save plan
-        plan_path = os.path.join(
-            phase_dir,
-            f"{item['query_id']}_plans.json"
-        )
-
-        with open(plan_path, "w") as f:
-            json.dump(plan_list, f, indent=2)
-
-        records.append({
-            "phase": item["phase"],
-            "drift_level": item["drift_level"],
-            "query_template": item["query_template"],
-            "query_id": item["query_id"],
-            "latency_list": latency_list,
-            "buffer_hit_list": buffer_hit_list,
-            "buffer_read_list": buffer_read_list,
-            "buffer_info_list": buffer_info_list,
-            "plan_path": plan_path
-        })
-
-        if idx % 10 == 0:
-            logger.info (f"Executed {idx}/{len(metadata)}")
-
-    except Exception as e:
-        logger.error(f"\nERROR: {item['query_id']}")
-        logger.error(e)
-
-# =========================================================
-# SAVE RESULTS
-# =========================================================
-df = pd.DataFrame(records)
-csv_path = os.path.join(
-    RESULT_DIR,
-    "execution_results.csv"
-)
-df.to_csv(csv_path, index=False)
-logger.info("\nDONE executing queries.")
-
-cursor.close()
-conn.close()
+# records = []
+# for idx, item in enumerate(metadata):
+#     with open(item["sql_path"], "r") as f:
+#         sql = f.read()
+#     try:
+#         plan_list = []
+#         latency_list = []
+#         buffer_hit_list = []
+#         buffer_read_list = []
+#         buffer_info_list = []
+#         for i, hint_sql in enumerate(HINTS_OFF):
+#             reset_pg_settings(cursor)
+#             if hint_sql.strip():
+#                 cursor.execute(hint_sql)
+#             try:
+#                 logger.info(f"Executing query: {item['query_id']} with {i}th plan in {item['phase']}.")
+#                 plan_json, latency, buffer_info = run_query(cursor, sql)
+#
+#                 plan_list.append(plan_json)
+#                 latency_list.append(latency)
+#                 buffer_hit_list.append(buffer_info["shared_hit_blocks"])
+#                 buffer_read_list.append(buffer_info["shared_read_blocks"])
+#                 buffer_info_list.append(buffer_info)
+#             except Exception as e:
+#                 logger.error(f"Query failed: {sql} with {i}th plan.")
+#                 logger.error(e)
+#                 plan_list.append(None)
+#                 latency_list.append(float("inf"))
+#                 buffer_hit_list.append(None)
+#                 buffer_read_list.append(None)
+#                 buffer_info_list.append(None)
+#
+#         best_execute_time = min(latency_list)
+#         phase_dir = os.path.join(
+#             RESULT_DIR,
+#             item["phase"],
+#             item["query_template"]
+#         )
+#         os.makedirs(phase_dir, exist_ok=True)
+#
+#         # Save plan
+#         plan_path = os.path.join(
+#             phase_dir,
+#             f"{item['query_id']}_plans.json"
+#         )
+#
+#         with open(plan_path, "w") as f:
+#             json.dump(plan_list, f, indent=2)
+#
+#         records.append({
+#             "phase": item["phase"],
+#             "drift_level": item["drift_level"],
+#             "query_template": item["query_template"],
+#             "query_id": item["query_id"],
+#             "latency_list": latency_list,
+#             "buffer_hit_list": buffer_hit_list,
+#             "buffer_read_list": buffer_read_list,
+#             "buffer_info_list": buffer_info_list,
+#             "plan_path": plan_path
+#         })
+#
+#         if idx % 10 == 0:
+#             logger.info (f"Executed {idx}/{len(metadata)}")
+#
+#     except Exception as e:
+#         logger.error(f"\nERROR: {item['query_id']}")
+#         logger.error(e)
+#
+# # =========================================================
+# # SAVE RESULTS
+# # =========================================================
+# df = pd.DataFrame(records)
+# csv_path = os.path.join(
+#     RESULT_DIR,
+#     "execution_results.csv"
+# )
+# df.to_csv(csv_path, index=False)
+# logger.info("\nDONE executing queries.")
+#
+# cursor.close()
+# conn.close()

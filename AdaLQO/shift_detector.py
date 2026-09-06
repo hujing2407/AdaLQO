@@ -90,6 +90,59 @@ def ks_values_pca(embedding_1, embedding_2):
     emb2_1d = pca.transform(embedding_2)
     return ks_2samp(emb1_1d[:, 0], emb2_1d[:, 0])
 
+def embedding_plans(model, all_plans):
+    """ Embed multiple plans.
+    Returns:
+        shape: (num_plans, embedding_dim)"""
+    trees = model._BaoRegression__tree_transform.transform(all_plans)
+    return model._BaoRegression__net.get_fixed_features(trees)
+
+def embedding_single_query(model, query_plans, aggregate=None):
+    """
+    Embed all candidate plans of a single query.
+    Parameters
+    ----------
+    model:
+        Trained BaoRegression model.
+    query_plans:
+        List of candidate plans for one query.
+        For example: 13 plans.
+    aggregate:
+        None   -> return all 13 plan embeddings
+        "mean" -> return one mean query embedding
+        "max"  -> return one max-pooled query embedding
+    Returns
+    -------
+    embeddings:
+        aggregate=None:
+            (13, embedding_dim)
+        aggregate="mean"/"max":
+            (embedding_dim,)
+    """
+
+    embeddings = embedding_plans(model, query_plans)
+
+    # 如果返回的是 torch.Tensor
+    if hasattr(embeddings, "detach"):
+        embeddings = embeddings.detach().cpu().numpy()
+
+    if aggregate is None:
+        return embeddings
+
+    if aggregate == "mean":
+        return np.mean(embeddings, axis=0)
+
+    if aggregate == "max":
+        return np.max(embeddings, axis=0)
+
+    raise ValueError("aggregate must be None, 'mean', or 'max'")
+
+
+def get_plans(queries):
+    all_plans = []
+    for plans in queries["plans"]:
+        all_plans.extend(plans)
+    return all_plans
 
 def main():
     # 样本数量可以不同，特征数目必须相同

@@ -1,3 +1,5 @@
+from typing import Any
+
 import numpy as np
 import json
 from pathlib import Path
@@ -92,31 +94,39 @@ def get_training_data(df: DataFrame):
     return X, y
 
 
-def prediction(model, queries):
+def pred_many(model, queries):
     results = []
     for _, query in queries.iterrows():
-        plans = query["plans"]
-        latencies = query["latency_list"]
-        preds = model.predict(plans)
-        chosen_idx = np.argmin(preds)
-        best_idx = np.argmin(latencies)
-        result = {
-            "query_id": query["query_id"],
-            "bao_latency":
-                latencies[chosen_idx],
-            "best_latency":
-                latencies[best_idx],
-            "default_latency":
-                latencies[0],
-            "regret":
-                latencies[chosen_idx]
-                / latencies[best_idx],
-        }
-
+        result = pred_single_query(model, query)
         results.append(result)
     res = pd.DataFrame(results)
     # res.to_csv(save_path, index=False)
     return res
+
+def pred_single_query(model, query) -> dict:
+    if hasattr(query, "_fields"):  # itertuples() 返回的 namedtuple
+        query_id = query.query_id
+        plans = query.plans
+        latencies = query.latency_list
+    else:  # pandas Series / dict
+        query_id = query["query_id"]
+        plans = query["plans"]
+        latencies = query["latency_list"]
+
+    preds = model.predict(plans)
+
+    chosen_idx = np.argmin(preds)
+    optimal_idx = np.argmin(latencies)
+
+    return {
+        "query_id": query_id,
+        "chosen_idx": int(chosen_idx),
+        "optimal_idx": int(optimal_idx),
+        "bao_latency": latencies[chosen_idx],
+        "optimal_latency": latencies[optimal_idx],
+        "default_latency": latencies[0],
+        "regret": latencies[chosen_idx]/ latencies[optimal_idx]
+    }
 
 
 def plot_res(phase_name, pre_results, save_path):
@@ -204,24 +214,3 @@ def get_results_by_tile(all_performs, tile='mean'):
 
     return avg_error
 
-
-def write_results(buffer, buffer_size, is_imbalance, result_per_seed):
-    avg_mean, avg_median, avg_max = 0, 0, 0
-    for seed in result_per_seed:
-        avg_mean += result_per_seed[seed]['mean']
-        avg_median += result_per_seed[seed]['median']
-        avg_max += result_per_seed[seed]['max']
-
-    avg_mean = avg_mean / len(result_per_seed)
-    avg_median = avg_median / len(result_per_seed)
-    avg_max = avg_max / len(result_per_seed)
-
-    overall_performance = {'mean': avg_mean, 'median': avg_median, 'max': avg_max}
-
-    result_json = {"buffer": buffer, "size": buffer_size, "overall_performance": overall_performance,
-                   "result_per_seed": result_per_seed}
-
-    file_name = "./cost_result_imb_{}.txt".format(str(is_imbalance))
-    with open(file_name, "a") as f:
-        f.write("{}\n".format(json.dumps(result_json)))
-        f.flush()

@@ -3,7 +3,7 @@ import sys
 import AdaLQO.utils as utils
 
 
-sys.path.insert(0, 'bao_server')
+sys.path.insert(0, '../bao_server')
 
 
 def main():
